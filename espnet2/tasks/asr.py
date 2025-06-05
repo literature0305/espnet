@@ -80,7 +80,7 @@ from espnet2.text.phoneme_tokenizer import g2p_choices
 from espnet2.torch_utils.initialize import initialize
 from espnet2.train.abs_espnet_model import AbsESPnetModel
 from espnet2.train.class_choices import ClassChoices
-from espnet2.train.collate_fn import CommonCollateFn
+from espnet2.train.collate_fn import WeightedCollateFn
 from espnet2.train.preprocessor import (
     AbsPreprocessor,
     CommonPreprocessor,
@@ -401,6 +401,12 @@ class ASRTask(AbsTask):
             "dynamic mixing, a warning will be displayed.",
         )
         group.add_argument(
+            "--utt2weight_scp",
+            type=str_or_none,
+            default=None,
+            help="The file path of utt2weight scp file.",
+        )
+        group.add_argument(
             "--aux_ctc_tasks",
             type=str,
             nargs="+",
@@ -420,7 +426,9 @@ class ASRTask(AbsTask):
         Tuple[List[str], Dict[str, torch.Tensor]],
     ]:
         # NOTE(kamo): int value = 0 is reserved by CTC-blank symbol
-        return CommonCollateFn(float_pad_value=0.0, int_pad_value=-1)
+        # return CommonCollateFn(float_pad_value=0.0, int_pad_value=-1)
+        # WeightedCollateFn will be created in a future step
+        return WeightedCollateFn(float_pad_value=0.0, int_pad_value=-1)
 
     @classmethod
     @typechecked
@@ -471,6 +479,7 @@ class ASRTask(AbsTask):
                 use_lang_prompt=(
                     args.use_lang_prompt if hasattr(args, "use_lang_prompt") else None
                 ),
+                utt2weight_scp=args.utt2weight_scp if hasattr(args, "utt2weight_scp") else None,
                 **args.preprocessor_conf,
                 use_nlp_prompt=(
                     args.use_nlp_prompt if hasattr(args, "use_nlp_prompt") else None
@@ -498,7 +507,7 @@ class ASRTask(AbsTask):
         MAX_REFERENCE_NUM = 4
 
         retval = ["text_spk{}".format(n) for n in range(2, MAX_REFERENCE_NUM + 1)]
-        retval = retval + ["prompt"]
+        retval = retval + ["prompt", "utt_weights"]
         retval = tuple(retval)
 
         logging.info(f"Optional Data Names: {retval }")

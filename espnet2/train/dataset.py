@@ -227,6 +227,44 @@ def label_loader(path):
     return AdapterForLabelScpReader(loader)
 
 
+@typechecked
+def read_utt2weight(path: Union[Path, str]) -> Dict[str, float]:
+    """Read a text file having 2 columns as dict object.
+
+    The first column is utt_id and the second column is weight.
+    The weight is converted to float.
+
+    Examples:
+        utt2weight:
+            key1 0.5
+            key2 1.2
+
+        >>> read_utt2weight('utt2weight')
+        {'key1': 0.5, 'key2': 1.2}
+
+    """
+    data = {}
+    with Path(path).open("r", encoding="utf-8") as f:
+        for linenum, line in enumerate(f, 1):
+            sps = line.rstrip().split(maxsplit=1)
+            if len(sps) != 2:
+                raise RuntimeError(
+                    f"Expected 2 columns, but got {len(sps)} "
+                    f"at {path}:{linenum}: '{line.rstrip()}'"
+                )
+            k, v = sps
+            if k in data:
+                raise RuntimeError(f"{k} is duplicated ({path}:{linenum})")
+            try:
+                data[k] = float(v)
+            except ValueError:
+                raise RuntimeError(
+                    f"Failed to convert '{v}' to float "
+                    f"at {path}:{linenum}: '{line.rstrip()}'"
+                )
+    return data
+
+
 def kaldi_loader(
     path, float_dtype=None, max_cache_fd: int = 0, allow_multi_rates=False
 ):
@@ -416,6 +454,16 @@ DATA_TYPES = {
         "    SPEAKER file1 2 4000 3023 <NA> <NA> spk2 <NA>"
         "    SPEAKER file1 3 500 4023 <NA> <NA> spk1 <NA>"
         "    END     file1 <NA> 4023 <NA> <NA> <NA> <NA>"
+        "   ...",
+    ),
+    "utt2weight": dict(
+        func=read_utt2weight,
+        kwargs=[],
+        help="A text file where each line consists of an utterance_id and a "
+        "float weight, separated by whitespace."
+        "\n\n"
+        "   utterance_id_A 0.5\n"
+        "   utterance_id_B 1.2\n"
         "   ...",
     ),
 }

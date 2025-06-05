@@ -419,3 +419,55 @@ def common_collate_fn(
 
     output = (uttids, output)
     return output
+
+
+class WeightedCollateFn(CommonCollateFn):
+    """Functor class that extends CommonCollateFn to handle utterance weights."""
+
+    @typechecked
+    def __init__(
+        self,
+        float_pad_value: Union[float, int] = 0.0,
+        int_pad_value: int = -32768,
+        not_sequence: Collection[str] = (),
+    ):
+        super().__init__(
+            float_pad_value=float_pad_value,
+            int_pad_value=int_pad_value,
+            not_sequence=not_sequence,
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(float_pad_value={self.float_pad_value}, "
+            f"int_pad_value={self.int_pad_value}, "
+            f"not_sequence={self.not_sequence})"
+        )
+
+    def __call__(
+        self, data: Collection[Tuple[str, Dict[str, np.ndarray]]]
+    ) -> Tuple[List[str], Dict[str, torch.Tensor]]:
+        uttids, output = super().__call__(data)
+
+        # Handle utt_weights
+        # data is List[Tuple[str, Dict[str, np.ndarray]]]
+        # Example: data[0][1] is the dict for the first utterance.
+        if data and "utt_weights" in data[0][1]:
+            weights_list = []
+            for _, sample_dict in data:
+                weight_val = sample_dict["utt_weights"]
+                # ESPnetDataset typically loads single float values as np.array([value])
+                if isinstance(weight_val, np.ndarray) and weight_val.size == 1:
+                    weights_list.append(weight_val.item())
+                elif isinstance(weight_val, (float, int)): # Should already be ndarray
+                    weights_list.append(float(weight_val))
+                else:
+                    raise TypeError(
+                        f"utt_weights has an unexpected type: {type(weight_val)}"
+                        f" or shape: {weight_val.shape if isinstance(weight_val, np.ndarray) else 'N/A'}"
+                    )
+
+            if weights_list:
+                output["utt_weights"] = torch.tensor(weights_list, dtype=torch.float32)
+
+        return uttids, output

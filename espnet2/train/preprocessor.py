@@ -172,9 +172,12 @@ class CommonPreprocessor(AbsPreprocessor):
         # only use for whisper
         whisper_language: Optional[str] = None,
         whisper_task: Optional[str] = None,
+        # utt2weight_scp argument
+        utt2weight_scp: Optional[str] = None,
     ):
         super().__init__(train)
         self.train = train
+        self.utt2weight_scp = utt2weight_scp
         self.speech_name = speech_name
         self.text_name = text_name
         self.speech_volume_normalize = speech_volume_normalize
@@ -671,9 +674,12 @@ class CommonPreprocessor_multi(CommonPreprocessor):
         # only use for whisper
         whisper_language: Optional[str] = None,
         whisper_task: Optional[str] = None,
+        # utt2weight_scp argument
+        utt2weight_scp: Optional[str] = None,
     ):
         super().__init__(
             train=train,
+            utt2weight_scp=utt2weight_scp,
             token_type=token_type,
             token_list=token_list,
             bpemodel=bpemodel,
@@ -699,6 +705,8 @@ class CommonPreprocessor_multi(CommonPreprocessor):
             data_aug_prob=data_aug_prob,
             whisper_language=whisper_language,
             whisper_task=whisper_task,
+            # Pass utt2weight_scp to parent constructor
+            utt2weight_scp=utt2weight_scp,
         )
         if isinstance(text_name, str):
             self.text_name = [text_name]
@@ -791,10 +799,13 @@ class MutliTokenizerCommonPreprocessor(CommonPreprocessor):
         # only use for whisper
         whisper_language: List[str] = None,
         whisper_task: Optional[str] = None,
+        # utt2weight_scp argument
+        utt2weight_scp: Optional[str] = None,
     ):
         # TODO(jiatong): sync with Kamo and Jing on interface for preprocessor
         super().__init__(
             train=train,
+            utt2weight_scp=utt2weight_scp,
             token_type=token_type[0],
             token_list=token_list[0],
             bpemodel=bpemodel[0],
@@ -821,6 +832,8 @@ class MutliTokenizerCommonPreprocessor(CommonPreprocessor):
             data_aug_effects=data_aug_effects,
             data_aug_num=data_aug_num,
             data_aug_prob=data_aug_prob,
+            # Pass utt2weight_scp to parent constructor
+            utt2weight_scp=utt2weight_scp,
         )
 
         assert (
