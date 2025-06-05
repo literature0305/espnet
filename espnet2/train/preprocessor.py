@@ -546,6 +546,26 @@ class CommonPreprocessor(AbsPreprocessor):
 
         data = self._speech_process(data)
         data = self._text_process(data)
+
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
         return data
 
 
@@ -758,6 +778,26 @@ class CommonPreprocessor_multi(CommonPreprocessor):
 
         data = self._speech_process(data)
         data = self._text_process(data)
+
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
         return data
 
 
@@ -892,6 +932,18 @@ class MutliTokenizerCommonPreprocessor(CommonPreprocessor):
                 tokens = self.tokenizer[i].text2tokens(text)
                 text_ints = self.token_id_converter[i].tokens2ids(tokens)
                 data[text_name] = np.array(text_ints, dtype=np.int64)
+
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
         return data
 
 
@@ -1049,6 +1101,26 @@ class DynamicMixingPreprocessor(AbsPreprocessor):
 
         if self.train:
             data = self._mix_speech_(uid, data)
+
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
 
         return data
 
@@ -1510,6 +1582,26 @@ class EnhPreprocessor(CommonPreprocessor):
 
         data = self._speech_process(uid, data)
         data = self._text_process(data)
+
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
         return data
 
 
@@ -1736,6 +1828,25 @@ class SVSPreprocessor(AbsPreprocessor):
                 if "label" not in data:
                     data["label"] = np.array(_text_ints, dtype=np.int64)
 
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
         return data
 
 
@@ -1961,8 +2072,28 @@ class TSEPreprocessor(EnhPreprocessor):
         self, uid: str, data: Dict[str, Union[str, np.ndarray]]
     ) -> Dict[str, np.ndarray]:
 
-        data = super()._speech_process(uid, data)
-        data = self._speech_process(uid, data)
+        data = super()._speech_process(uid, data) # from EnhPreprocessor
+        data = self._speech_process(uid, data) # from TSEPreprocessor (current class)
+
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
         return data
 
 
@@ -2243,6 +2374,26 @@ class SpkPreprocessor(CommonPreprocessor):
         data = self._text_process(data)
         data = self._speech_process(data)
 
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
+
         return data
 
 
@@ -2406,6 +2557,17 @@ class S2TPreprocessor(CommonPreprocessor):
 
                     data[name] = text_ints
 
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
         return data
 
     @typechecked
@@ -2417,6 +2579,15 @@ class S2TPreprocessor(CommonPreprocessor):
         data, init_pad = self._pad_or_trim_speech(data)
 
         data = self._text_process(data, round(init_pad / self.speech_resolution))
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
 
         return data
 
@@ -2576,6 +2747,17 @@ class S2TCTCPreprocessor(CommonPreprocessor):
 
                     data[name] = text_ints
 
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                data['utt2weight'] = weight_value.astype(np.float32)
+
         return data
 
     @typechecked
@@ -2587,6 +2769,15 @@ class S2TCTCPreprocessor(CommonPreprocessor):
         data, _ = self._pad_or_trim_speech(data)
 
         data = self._text_process(data)
+
+        # force data precision: e.g. speech (Nmic, Time), text (Time)
+        for name in data:
+            value = data[name]
+            if isinstance(value, np.ndarray):
+                if value.dtype.kind == "f":
+                    # This part is to convert float64 to float32
+                    # to save the memory in an training process
+                    data[name] = value.astype(np.float32)
 
         return data
 
@@ -2711,6 +2902,17 @@ class SpeechLMPreprocessor(AbsPreprocessor):
         )
         new_data["prefix_len"] = np.array([prefix_len])
         # self.diagnose(new_data) # For debug. Enable this to check the sequence format
+
+        # utt2weight processing
+        if 'utt2weight' in data:
+            weight_value = data['utt2weight']
+            if isinstance(weight_value, list) and len(weight_value) == 1:
+                new_data['utt2weight'] = np.array([float(weight_value[0])], dtype=np.float32)
+            elif isinstance(weight_value, (float, int)): # Should not happen based on loader
+                new_data['utt2weight'] = np.array([float(weight_value)], dtype=np.float32)
+            # If it's already a numpy array, ensure correct dtype (optional, depends on strictness)
+            elif isinstance(weight_value, np.ndarray):
+                new_data['utt2weight'] = weight_value.astype(np.float32)
 
         return new_data
 

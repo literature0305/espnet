@@ -226,6 +226,10 @@ class ESPnetASRModel(AbsESPnetModel):
             text_lengths: (Batch,)
             kwargs: "utt_id" is among the input.
         """
+        utt2weight = kwargs.get("utt2weight", None)
+        if utt2weight is not None:
+            assert speech.shape[0] == utt2weight.shape[0], (speech.shape[0], utt2weight.shape[0])
+
         assert text_lengths.dim() == 1, text_lengths.shape
         # Check that batch_size is unified
         assert (
@@ -256,9 +260,16 @@ class ESPnetASRModel(AbsESPnetModel):
 
         # 1. CTC branch
         if self.ctc_weight != 0.0:
-            loss_ctc, cer_ctc = self._calc_ctc_loss(
-                encoder_out, encoder_out_lens, text, text_lengths
+            loss_ctc_unreduced, cer_ctc = self._calc_ctc_loss(
+                encoder_out, encoder_out_lens, text, text_lengths, reduction="none"
             )
+            if utt2weight is not None and loss_ctc_unreduced is not None:
+                loss_ctc = (loss_ctc_unreduced * utt2weight.to(loss_ctc_unreduced.device)).mean()
+            elif loss_ctc_unreduced is not None:
+                loss_ctc = loss_ctc_unreduced.mean()
+            else:
+                loss_ctc = None
+
 
             # Collect CTC branch stats
             stats["loss_ctc"] = loss_ctc.detach() if loss_ctc is not None else None
@@ -281,21 +292,36 @@ class ESPnetASRModel(AbsESPnetModel):
                         aux_data_lengths = kwargs.get(aux_data_key + "_lengths", None)
 
                         if aux_data_tensor is not None and aux_data_lengths is not None:
-                            loss_ic, cer_ic = self._calc_ctc_loss(
+                            loss_ic_unreduced, cer_ic = self._calc_ctc_loss(
                                 intermediate_out,
                                 encoder_out_lens,
                                 aux_data_tensor,
                                 aux_data_lengths,
+                                reduction="none",
                             )
+                            if utt2weight is not None and loss_ic_unreduced is not None:
+                                loss_ic = (loss_ic_unreduced * utt2weight.to(loss_ic_unreduced.device)).mean()
+                            elif loss_ic_unreduced is not None:
+                                loss_ic = loss_ic_unreduced.mean()
+                            else:
+                                loss_ic = None
                         else:
                             raise Exception(
                                 "Aux. CTC tasks were specified but no data was found"
                             )
-                if loss_ic is None:
-                    loss_ic, cer_ic = self._calc_ctc_loss(
-                        intermediate_out, encoder_out_lens, text, text_lengths
+                if loss_ic is None: # if not calculated with aux_data
+                    loss_ic_unreduced, cer_ic = self._calc_ctc_loss(
+                        intermediate_out, encoder_out_lens, text, text_lengths, reduction="none"
                     )
-                loss_interctc = loss_interctc + loss_ic
+                    if utt2weight is not None and loss_ic_unreduced is not None:
+                        loss_ic = (loss_ic_unreduced * utt2weight.to(loss_ic_unreduced.device)).mean()
+                    elif loss_ic_unreduced is not None:
+                        loss_ic = loss_ic_unreduced.mean()
+                    else:
+                        loss_ic = None
+
+                if loss_ic is not None:
+                    loss_interctc = loss_interctc + loss_ic
 
                 # Collect Intermedaite CTC stats
                 stats["loss_interctc_layer{}".format(layer_idx)] = (
@@ -342,9 +368,16 @@ class ESPnetASRModel(AbsESPnetModel):
         else:
             # 2c. Attention decoder branch
             if self.ctc_weight != 1.0:
-                loss_att, acc_att, cer_att, wer_att = self._calc_att_loss(
-                    encoder_out, encoder_out_lens, text, text_lengths
+                loss_att_unreduced, acc_att, cer_att, wer_att = self._calc_att_loss(
+                    encoder_out, encoder_out_lens, text, text_lengths, reduction="none"
                 )
+                if utt2weight is not None and loss_att_unreduced is not None:
+                    loss_att = (loss_att_unreduced * utt2weight.to(loss_att_unreduced.device)).mean()
+                elif loss_att_unreduced is not None:
+                    loss_att = loss_att_unreduced.mean()
+                else:
+                    loss_att = None
+
 
             # 3. CTC-Att loss definition
             if self.ctc_weight == 0.0:
@@ -553,6 +586,7 @@ class ESPnetASRModel(AbsESPnetModel):
         encoder_out_lens: torch.Tensor,
         ys_pad: torch.Tensor,
         ys_pad_lens: torch.Tensor,
+        reduction: str = "mean", # Added reduction argument
     ):
         if hasattr(self, "lang_token_id") and self.lang_token_id is not None:
             ys_pad = torch.cat(
@@ -573,7 +607,7 @@ class ESPnetASRModel(AbsESPnetModel):
         )
 
         # 2. Compute attention loss
-        loss_att = self.criterion_att(decoder_out, ys_out_pad)
+        loss_att = self.criterion_att(decoder_out, ys_out_pad, reduction=reduction) # Pass reduction
         acc_att = th_accuracy(
             decoder_out.view(-1, self.vocab_size),
             ys_out_pad,
@@ -595,9 +629,10 @@ class ESPnetASRModel(AbsESPnetModel):
         encoder_out_lens: torch.Tensor,
         ys_pad: torch.Tensor,
         ys_pad_lens: torch.Tensor,
+        reduction: str = "mean", # Added reduction argument
     ):
         # Calc CTC loss
-        loss_ctc = self.ctc(encoder_out, encoder_out_lens, ys_pad, ys_pad_lens)
+        loss_ctc = self.ctc(encoder_out, encoder_out_lens, ys_pad, ys_pad_lens, reduction=reduction) # Pass reduction
 
         # Calc CER using CTC
         cer_ctc = None

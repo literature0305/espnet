@@ -70,23 +70,25 @@ class CTC(torch.nn.Module):
         else:
             raise ValueError(f'ctc_type must be "builtin" or "gtnctc": {self.ctc_type}')
 
-        self.reduce = reduce
+        self.reduce = reduce # Retain for internal logic if needed, but forward controls reduction
 
-    def loss_fn(self, th_pred, th_target, th_ilen, th_olen) -> torch.Tensor:
+    def loss_fn(self, th_pred, th_target, th_ilen, th_olen, reduction: str = "mean") -> torch.Tensor:
         if self.ctc_type == "builtin" or self.ctc_type == "brctc":
             th_pred = th_pred.log_softmax(2).float()
+            # self.ctc_loss is already initialized with reduction='none' for 'builtin'
             loss = self.ctc_loss(th_pred, th_target, th_ilen, th_olen)
-            if self.ctc_type == "builtin":
-                size = th_pred.size(1)
-            else:
-                size = loss.size(0)  # some invalid examples will be excluded
 
-            if self.reduce:
-                # Batch-size average
-                loss = loss.sum() / size
+            # For 'builtin', loss is (B,). For 'brctc', it might be different or already reduced.
+            if reduction == "mean":
+                if loss.ndim == 0: # Already reduced (e.g. by brctc if it does its own mean)
+                    return loss
+                return loss.mean()
+            elif reduction == "sum":
+                return loss.sum()
+            elif reduction == "none":
+                return loss # Return per-sample losses
             else:
-                loss = loss / size
-            return loss
+                raise ValueError(f"Unsupported reduction: {reduction}")
 
         # builtin2 ignores nan losses using the logic below, while
         # builtin relies on the zero_infinity flag in pytorch CTC
@@ -134,23 +136,39 @@ class CTC(torch.nn.Module):
                         th_olen[indices],
                     )
             else:
-                size = th_pred.size(1)
+                size = th_pred.size(1) # Batch size for builtin2
 
-            if self.reduce:
-                # Batch-size average
+            # This path is for ctc_type == "builtin2"
+            # Assuming self.ctc_loss for builtin2 also returns per-sample loss
+            if reduction == "mean":
                 loss = loss.sum() / size
+            elif reduction == "sum":
+                loss = loss.sum()
+            elif reduction == "none":
+                pass # loss is already per-sample
             else:
-                loss = loss / size
+                raise ValueError(f"Unsupported reduction: {reduction}")
             return loss
 
         elif self.ctc_type == "gtnctc":
             log_probs = torch.nn.functional.log_softmax(th_pred, dim=2)
-            return self.ctc_loss(log_probs, th_target, th_ilen, 0, "none")
+            # GTNCTCLossFunction.apply might not support a reduction argument.
+            # The original call was self.ctc_loss(..., "none"), implying it returns per-sample.
+            loss = self.ctc_loss(log_probs, th_target, th_ilen, 0, "none") # Assuming it returns per-sample
+
+            if reduction == "mean":
+                return loss.mean()
+            elif reduction == "sum":
+                return loss.sum()
+            elif reduction == "none":
+                return loss
+            else:
+                raise ValueError(f"Unsupported reduction: {reduction}")
 
         else:
             raise NotImplementedError
 
-    def forward(self, hs_pad, hlens, ys_pad, ys_lens):
+    def forward(self, hs_pad, hlens, ys_pad, ys_lens, reduction: str = "mean"):
         """Calculate CTC loss.
 
         Args:
@@ -158,12 +176,18 @@ class CTC(torch.nn.Module):
             hlens: batch of lengths of hidden state sequences (B)
             ys_pad: batch of padded character id sequence tensor (B, Lmax)
             ys_lens: batch of lengths of character sequence (B)
+            reduction: "mean", "sum", or "none"
         """
         # hs_pad: (B, L, NProj) -> ys_hat: (B, L, Nvocab)
         ys_hat = self.ctc_lo(F.dropout(hs_pad, p=self.dropout_rate))
 
         if self.ctc_type == "brctc":
-            loss = self.loss_fn(ys_hat, ys_pad, hlens, ys_lens).to(
+            # Bayes Risk CTC might handle reduction internally or differently.
+            # For now, assume it aligns with 'mean' or we adjust if it returns per-sample.
+            # If self.ctc_loss for brctc is an instance of BayesRiskCTC,
+            # it seems to do its own reduction based on its internal logic.
+            # The loss_fn will handle it if it's per-sample.
+            loss = self.loss_fn(ys_hat, ys_pad, hlens, ys_lens, reduction=reduction).to(
                 device=hs_pad.device, dtype=hs_pad.dtype
             )
             return loss
@@ -171,13 +195,13 @@ class CTC(torch.nn.Module):
         elif self.ctc_type == "gtnctc":
             # gtn expects list form for ys
             ys_true = [y[y != -1] for y in ys_pad]  # parse padded ys
-        else:
-            # ys_hat: (B, L, D) -> (L, B, D)
+        else: # builtin and builtin2
+            # ys_hat: (B, L, D) -> (L, B, D) for PyTorch CTCLoss
             ys_hat = ys_hat.transpose(0, 1)
             # (B, L) -> (BxL,)
             ys_true = torch.cat([ys_pad[i, :l] for i, l in enumerate(ys_lens)])
 
-        loss = self.loss_fn(ys_hat, ys_true, hlens, ys_lens).to(
+        loss = self.loss_fn(ys_hat, ys_true, hlens, ys_lens, reduction=reduction).to(
             device=hs_pad.device, dtype=hs_pad.dtype
         )
 

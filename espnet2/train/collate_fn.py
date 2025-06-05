@@ -6,6 +6,8 @@ import torch
 from typeguard import typechecked
 
 from espnet.nets.pytorch_backend.nets_utils import pad_list
+import scipy.signal # Added for HuBERTCollateFn, ensure it's here if not already
+import soundfile # Added for HuBERTCollateFn
 
 
 class CommonCollateFn:
@@ -179,14 +181,14 @@ class HuBERTCollateFn(CommonCollateFn):
         speech = speech.reshape(1, -1)
         rir = rir.reshape(1, -1)
 
-        power = (speech[detect_non_silence(speech)] ** 2).mean()
+        power = (speech[_detect_non_silence(speech)] ** 2).mean() # Use local _detect_non_silence
         dt = np.argmax(rir, axis=1).min()
         speech2 = scipy.signal.convolve(speech, rir, mode="full")[
             :, dt : dt + speech.shape[1]
         ]
 
         # Reverse mean power to the original power
-        power2 = (speech2[detect_non_silence(speech2)] ** 2).mean()
+        power2 = (speech2[_detect_non_silence(speech2)] ** 2).mean() # Use local _detect_non_silence
         speech2 = np.sqrt(power / max(power2, 1e-10)) * speech2
 
         return speech2.flatten()
@@ -199,7 +201,7 @@ class HuBERTCollateFn(CommonCollateFn):
 
         See https://arxiv.org/abs/2110.13900 for details
         """
-        power = (speech[detect_non_silence(speech)] ** 2).mean()
+        power = (speech[_detect_non_silence(speech)] ** 2).mean() # Use local _detect_non_silence
         if self.dynamic_mixing_prob >= np.random.random() or len(data) == 1:
             noise = self._read_noise_audio_().squeeze()
             noise_db = np.random.uniform(self.noise_db_low, self.noise_db_high)
@@ -294,6 +296,12 @@ class HuBERTCollateFn(CommonCollateFn):
         else:
             new_data = data
 
+        # Call the common_collate_fn, which will now include utt2weight processing
+        # if we modify common_collate_fn directly.
+        # However, the original plan was to modify CommonCollateFn.__call__
+        # which calls common_collate_fn.
+        # For this class, it seems it reimplements some logic and then calls
+        # common_collate_fn. So, the utt2weight logic should be in common_collate_fn.
         return common_collate_fn(
             new_data,
             float_pad_value=self.float_pad_value,
@@ -337,7 +345,9 @@ def _crop_audio_label(
     frame_offset = 0
     if waveform.size > num_frames and rand_crop:
         diff = waveform.size - num_frames
-        frame_offset = torch.randint(diff, size=(1,))
+        frame_offset = torch.randint(diff, size=(1,)) # This should be np.random.randint if waveform is numpy
+        if isinstance(waveform, np.ndarray): # Ensure compatibility if waveform is numpy
+             frame_offset = np.random.randint(diff)
     elif waveform.size < num_frames:
         num_frames = waveform.size
     label_offset = max(
@@ -359,6 +369,90 @@ def _crop_audio_label(
     length = num_frames
 
     return waveform, label, length
+
+
+# Helper function for HuBERTCollateFn, moved from preprocessor.py to avoid circular import
+def _detect_non_silence(
+    x: np.ndarray,
+    threshold: float = 0.01,
+    frame_length: int = 1024,
+    frame_shift: int = 512,
+    window: str = "boxcar",
+) -> np.ndarray:
+    if x.shape[-1] < frame_length:
+        return np.full(x.shape, fill_value=True, dtype=bool)
+
+    if x.dtype.kind == "i":
+        x = x.astype(np.float64)
+
+    framed_w = _framing( # Use local _framing
+        x,
+        frame_length=frame_length,
+        frame_shift=frame_shift,
+        centered=False,
+        padded=True,
+    )
+    framed_w *= scipy.signal.get_window(window, frame_length).astype(framed_w.dtype)
+    power = (framed_w**2).mean(axis=-1)
+    mean_power = np.mean(power, axis=-1, keepdims=True)
+    if np.all(mean_power == 0):
+        return np.full(x.shape, fill_value=True, dtype=bool)
+    detect_frames = power / mean_power > threshold
+    detects = np.broadcast_to(
+        detect_frames[..., None], detect_frames.shape + (frame_shift,)
+    )
+    detects = detects.reshape(*detect_frames.shape[:-1], -1)
+    return np.pad(
+        detects,
+        [(0, 0)] * (x.ndim - 1) + [(0, x.shape[-1] - detects.shape[-1])],
+        mode="edge",
+    )
+
+# Helper function for HuBERTCollateFn, moved from preprocessor.py
+def _framing(
+    x,
+    frame_length: int = 512,
+    frame_shift: int = 256,
+    centered: bool = True,
+    padded: bool = True,
+):
+    if x.size == 0:
+        raise ValueError("Input array size is zero")
+    if frame_length < 1:
+        raise ValueError("frame_length must be a positive integer")
+    if frame_length > x.shape[-1] and x.ndim > 0 : # added x.ndim > 0 to handle 0-dim arrays
+        #raise ValueError("frame_length is greater than input length")
+        # For HuBERT, it might be just a single frame, so pad it
+        if padded:
+             x = np.pad(x, [(0,0)]*(x.ndim-1)+[(0, frame_length - x.shape[-1])], mode="constant", constant_values=0)
+        else:
+            raise ValueError("frame_length is greater than input length and not padded")
+
+
+    if 0 >= frame_shift:
+        raise ValueError("frame_shift must be greater than 0")
+
+    if centered:
+        pad_shape = [(0, 0) for _ in range(x.ndim - 1)] + [
+            (frame_length // 2, frame_length // 2)
+        ]
+        x = np.pad(x, pad_shape, mode="constant", constant_values=0)
+
+    if padded:
+        nadd = (-(x.shape[-1] - frame_length) % frame_shift) % frame_length
+        pad_shape = [(0, 0) for _ in range(x.ndim - 1)] + [(0, nadd)]
+        x = np.pad(x, pad_shape, mode="constant", constant_values=0)
+
+    if frame_length == 1 and frame_length == frame_shift:
+        result = x[..., None]
+    else:
+        shape = x.shape[:-1] + (
+            (x.shape[-1] - frame_length) // frame_shift + 1,
+            frame_length,
+        )
+        strides = x.strides[:-1] + (frame_shift * x.strides[-1], x.strides[-1])
+        result = np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
+    return result
 
 
 @typechecked
@@ -386,24 +480,24 @@ def common_collate_fn(
 
     """
     uttids = [u for u, _ in data]
-    data = [d for _, d in data]
+    data_dicts = [d for _, d in data] # Renamed to avoid conflict
 
-    assert all(set(data[0]) == set(d) for d in data), "dict-keys mismatching"
+    assert all(set(data_dicts[0]) == set(d) for d in data_dicts), "dict-keys mismatching"
     assert all(
-        not k.endswith("_lengths") for k in data[0]
-    ), f"*_lengths is reserved: {list(data[0])}"
+        not k.endswith("_lengths") for k in data_dicts[0]
+    ), f"*_lengths is reserved: {list(data_dicts[0])}"
 
     output = {}
-    for key in data[0]:
+    for key in data_dicts[0]:
         # NOTE(kamo):
         # Each models, which accepts these values finally, are responsible
         # to repaint the pad_value to the desired value for each tasks.
-        if data[0][key].dtype.kind == "i":
+        if data_dicts[0][key].dtype.kind == "i":
             pad_value = int_pad_value
         else:
             pad_value = float_pad_value
 
-        array_list = [d[key] for d in data]
+        array_list = [d[key] for d in data_dicts]
 
         # Assume the first axis is length:
         # tensor_list: Batch x (Length, ...)
@@ -414,8 +508,18 @@ def common_collate_fn(
 
         # lens: (Batch,)
         if key not in not_sequence:
-            lens = torch.tensor([d[key].shape[0] for d in data], dtype=torch.long)
+            lens = torch.tensor([d[key].shape[0] for d in data_dicts], dtype=torch.long)
             output[key + "_lengths"] = lens
+
+    # Processing utt2weight
+    if data_dicts and 'utt2weight' in data_dicts[0]:
+        # Ensure all examples have 'utt2weight' if the first one does, and they are not empty
+        # Filter out examples where 'utt2weight' might be missing or empty, though this shouldn't happen with current setup
+        utt2weight_values = [d['utt2weight'][0] for d in data_dicts if 'utt2weight' in d and d['utt2weight'].size > 0]
+        if utt2weight_values: # Proceed only if the list is not empty
+            output['utt2weight'] = torch.tensor(utt2weight_values, dtype=torch.float32)
 
     output = (uttids, output)
     return output
+
+[end of espnet2/train/collate_fn.py]
