@@ -1665,6 +1665,16 @@ class AbsTask(ABC):
         else:
             raise NotImplementedError(f"mode={mode}")
 
+        # Get utt2weight_scp path from args
+        utt2weight_scp_path = getattr(args, "utt2weight_scp", None)
+        if utt2weight_scp_path is not None and mode in ["train", "valid"]:
+            # Ensure data_path_and_name_and_type is a list to allow append
+            if not isinstance(data_path_and_name_and_type, list):
+                data_path_and_name_and_type = list(data_path_and_name_and_type)
+            data_path_and_name_and_type.append(
+                (utt2weight_scp_path, "utt_weights", "utt2weight")
+            )
+
         return IteratorOptions(
             preprocess_fn=preprocess_fn,
             collate_fn=collate_fn,
