@@ -1667,7 +1667,7 @@ class AbsTask(ABC):
 
         # Get utt2weight_scp path from args
         utt2weight_scp_path = getattr(args, "utt2weight_scp", None)
-        if utt2weight_scp_path is not None and mode in ["train", "valid"]:
+        if utt2weight_scp_path is not None and mode == "train": # Only for training dataset
             # Ensure data_path_and_name_and_type is a list to allow append
             if not isinstance(data_path_and_name_and_type, list):
                 data_path_and_name_and_type = list(data_path_and_name_and_type)
